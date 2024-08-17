@@ -2,6 +2,11 @@
 name = "office-convert-server"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+repository = "https://github.com/jacobtread/office-convert-server"
+authors = ["Jacobtread <jacobtread@gmail.com>"]
+readme = "README.md"
+description = "HTTP server for converting office file formats to PDFs"
 
 [dependencies]
 # Cheap sharable byte array type
