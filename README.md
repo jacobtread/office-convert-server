@@ -6,7 +6,7 @@ Simple server for converting office file formats into PDF files
 
 Debian:
 ```
-sudo apt-get install libreoffice libreoffice-sdk libreofficekit-dev clang
+sudo apt-get install libreoffice libreofficekit-dev clang
 ```
 Fedora:
 ```sh

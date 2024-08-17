@@ -1,0 +1,8 @@
+services:
+  office_convert_server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: office_convert_server
+    ports:
+      - "3000:3000"
