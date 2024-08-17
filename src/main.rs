@@ -15,7 +15,7 @@ mod error;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    dotenvy::dotenv()?;
+    _ = dotenvy::dotenv();
 
     let office_path =
         std::env::var("LIBREOFFICE_SDK_PATH").context("missing LIBREOFFICE_SDK_PATH")?;
