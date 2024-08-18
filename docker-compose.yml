@@ -1,8 +1,43 @@
 services:
-  office_convert_server:
+  office_convert_server_1:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: office_convert_server
     ports:
       - "3000:3000"
+  office_convert_server_2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: office_convert_server
+    ports:
+      - "3001:3000"
+  office_convert_server_3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: office_convert_server
+    ports:
+      - "3002:3000"
+  office_convert_server_4:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: office_convert_server
+    ports:
+      - "3003:3000"
+  office_convert_server_5:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: office_convert_server
+    ports:
+      - "3004:3000"
+  office_convert_server_5:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: office_convert_server
+    ports:
+      - "3005:3000"

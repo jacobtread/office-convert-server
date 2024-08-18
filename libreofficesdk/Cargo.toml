@@ -1,0 +1,20 @@
+[package]
+name = "libreofficesdk"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/jacobtread/office-convert-server"
+authors = ["Jacobtread <jacobtread@gmail.com>"]
+readme = "README.md"
+description = "HTTP server for converting office file formats to PDFs"
+
+
+[dependencies]
+num_enum = "0.7.3"
+serde = { version = "1.0.208", features = ["derive"] }
+serde_json = "1.0.125"
+thiserror = "1.0.63"
+url = "2.2.2"
+
+[build-dependencies]
+bindgen = "0.70"

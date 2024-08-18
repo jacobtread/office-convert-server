@@ -8,9 +8,15 @@ authors = ["Jacobtread <jacobtread@gmail.com>"]
 readme = "README.md"
 description = "HTTP server for converting office file formats to PDFs"
 
+[workspace]
+members = [".", "libreofficesdk"]
+
 [dependencies]
 # Cheap sharable byte array type
 bytes = "1"
+
+
+libreofficesdk = { version = "0.1", path = "./libreofficesdk" }
 
 # Environment variables
 dotenvy = "0.15"
@@ -38,3 +44,9 @@ thiserror = "1"
 
 # Basic logging
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+url = "2.2.2"
+
+[build-dependencies]
+bindgen = "0.63"

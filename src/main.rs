@@ -5,17 +5,35 @@ use axum::{
 use axum_typed_multipart::{FieldData, TryFromMultipart, TypedMultipart};
 use bytes::Bytes;
 use error::DynHttpError;
-use libreoffice_rs::{urls, Office};
+use libreofficesdk::{urls, Office};
 use rand::{distributions::Alphanumeric, Rng};
 use serde::Serialize;
-use std::env::temp_dir;
+use std::{env::temp_dir, ffi::CStr};
 use tokio::sync::{mpsc, oneshot};
+use tracing::debug;
+use tracing_subscriber::EnvFilter;
 
 mod error;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     _ = dotenvy::dotenv();
+
+    // Start configuring a `fmt` subscriber
+    let subscriber = tracing_subscriber::fmt()
+        // Use the logging options from env variables
+        .with_env_filter(EnvFilter::from_default_env())
+        // Display source code file paths
+        .with_file(true)
+        // Display source code line numbers
+        .with_line_number(true)
+        // Don't display the event's target (module path)
+        .with_target(false)
+        // Build the subscriber
+        .finish();
+
+    // use that subscriber to process traces emitted after this point
+    tracing::subscriber::set_global_default(subscriber)?;
 
     let office_path =
         std::env::var("LIBREOFFICE_SDK_PATH").context("missing LIBREOFFICE_SDK_PATH")?;
@@ -94,6 +112,15 @@ fn office_runner(path: String, mut rx: mpsc::Receiver<OfficeMsg>) -> anyhow::Res
         .to_str()
         .context("failed to create temp out path")?;
 
+    let mut o2 = office.clone();
+
+    office
+        .register_callback(move |ty, payload| {
+            let value = payload.to_string_lossy().to_string();
+            debug!(?ty, %value, "callback invoked");
+        })
+        .context("failed to register office callback")?;
+
     // Get next message
     while let Some(msg) = rx.blocking_recv() {
         let (input, output) = match msg {
@@ -123,14 +150,24 @@ fn convert_document(
     // Write to temp file
     std::fs::write(temp_in_path, input).context("failed to write temp input")?;
 
+    let output_url = urls::local_as_abs(temp_out_path).context("failed to create output url")?;
+
     // Load document
-    let doc_url = urls::local_into_abs(temp_in_path).context("failed to create input url")?;
+    let input_url = urls::local_into_abs(temp_in_path).context("failed to create input url")?;
     let mut doc = office
-        .document_load(doc_url)
+        .document_load(input_url)
         .context("failed to load document")?;
 
+    debug!("document loaded");
+
     // Convert document
-    doc.save_as(temp_out_path, "pdf", None);
+    let result = doc.save_as(output_url, "pdf", None);
+
+    if result {
+        debug!("conversion finished");
+    } else {
+        debug!("failed to convert")
+    }
 
     // Read document context
     let bytes = std::fs::read(temp_out_path).context("failed to read temp out file")?;
