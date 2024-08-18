@@ -12,9 +12,13 @@ pub mod urls;
 
 use error::Error;
 use num_enum::FromPrimitive;
+use serde::Deserialize;
 use urls::DocUrl;
 
-use std::ffi::{c_char, c_int, c_void, CStr, CString};
+use std::{
+    ffi::{c_char, c_int, c_void, CStr, CString},
+    os::raw::c_ulonglong,
+};
 
 /// A Wrapper for the `LibreOfficeKit` C API.
 #[derive(Clone)]
@@ -180,6 +184,22 @@ impl Office {
         Ok(Document { doc: document })
     }
 
+    pub fn trim_memory(&mut self, target: c_int) -> Result<(), Error> {
+        unsafe {
+            let trim_memory = (*self.lok_class)
+                .trimMemory
+                .expect("missing trimMemory function");
+            trim_memory(self.lok, target)
+        };
+
+        // Check for errors
+        if let Some(error) = self.get_error() {
+            return Err(Error::new(error));
+        }
+
+        Ok(())
+    }
+
     pub fn set_optional_features<T>(&mut self, optional_features: T) -> Result<u64, Error>
     where
         T: IntoIterator<Item = LibreOfficeKitOptionalFeatures>,
@@ -255,6 +275,25 @@ impl Office {
         Ok(Document { doc })
     }
 
+    pub fn send_dialog_event(
+        &mut self,
+        window_id: c_ulonglong,
+        arguments: *const c_char,
+    ) -> Result<(), Error> {
+        unsafe {
+            let send_dialog_event = (*self.lok_class)
+                .sendDialogEvent
+                .expect("missing sendDialogEvent function");
+
+            send_dialog_event(self.lok, window_id, arguments);
+        }
+
+        if let Some(error) = self.get_error() {
+            return Err(Error::new(error));
+        }
+
+        Ok(())
+    }
     pub fn run_macro(&mut self, url: DocUrl) -> Result<(), Error> {
         let result = unsafe {
             let run_macro = (*self.lok_class)
@@ -395,4 +434,28 @@ pub enum CallbackType {
 
     #[num_enum(catch_all)]
     Unknown(i32),
+}
+
+#[derive(Debug)]
+pub struct JSDialog(pub serde_json::Value);
+
+impl JSDialog {
+    /// Get the ID field for the dialog.
+    pub fn get_id(&self) -> Option<c_ulonglong> {
+        let obj = self.0.as_object()?;
+        obj.iter().find_map(|value| {
+            if value.0.ne("id") {
+                return None;
+            }
+
+            let value = value.1.as_u64()?;
+            Some(value)
+        })
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct JSDialogResponse {
+    id: String,
+    response: u64,
 }

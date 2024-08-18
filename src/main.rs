@@ -5,10 +5,13 @@ use axum::{
 use axum_typed_multipart::{FieldData, TryFromMultipart, TypedMultipart};
 use bytes::Bytes;
 use error::DynHttpError;
-use libreofficesdk::{urls, Office};
+use libreofficesdk::{urls, CallbackType, JSDialog, Office};
 use rand::{distributions::Alphanumeric, Rng};
 use serde::Serialize;
-use std::{env::temp_dir, ffi::CStr};
+use std::{
+    env::temp_dir,
+    ffi::{CStr, CString},
+};
 use tokio::sync::{mpsc, oneshot};
 use tracing::debug;
 use tracing_subscriber::EnvFilter;
@@ -116,8 +119,22 @@ fn office_runner(path: String, mut rx: mpsc::Receiver<OfficeMsg>) -> anyhow::Res
 
     office
         .register_callback(move |ty, payload| {
-            let value = payload.to_string_lossy().to_string();
+            let value = &*payload.to_string_lossy();
             debug!(?ty, %value, "callback invoked");
+
+            if let CallbackType::JSDialog = ty {
+                if value.contains("is corrupt and therefore cannot be opened") {
+                    let value: serde_json::Value = serde_json::from_str(value).unwrap();
+                    let dialog = JSDialog(value);
+                    let id = dialog.get_id();
+
+                    if let Some(id) = id {
+                        let a = CString::new("{\"id\": \"no\", \"response\": 3}").unwrap();
+                        debug!(%id, "sending dialog event");
+                        o2.send_dialog_event(id, std::ptr::null()).unwrap();
+                    }
+                }
+            }
         })
         .context("failed to register office callback")?;
 
