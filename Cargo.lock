@@ -676,8 +676,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "libreofficesdk"
-version = "0.1.0"
+name = "libreofficekit"
+version = "0.0.0"
 dependencies = [
  "bindgen 0.70.0",
  "num_enum",
@@ -849,7 +849,7 @@ dependencies = [
  "bytes",
  "dotenvy",
  "libreoffice-rs",
- "libreofficesdk",
+ "libreofficekit",
  "rand",
  "serde",
  "serde_json",

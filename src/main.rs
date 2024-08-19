@@ -1,17 +1,14 @@
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use axum::{
     body::Body, extract::DefaultBodyLimit, http::Response, routing::get, Extension, Json, Router,
 };
 use axum_typed_multipart::{FieldData, TryFromMultipart, TypedMultipart};
 use bytes::Bytes;
 use error::DynHttpError;
-use libreofficesdk::{urls, CallbackType, JSDialog, Office};
+use libreofficekit::{urls, CallbackType, Office, OfficeError};
 use rand::{distributions::Alphanumeric, Rng};
 use serde::Serialize;
-use std::{
-    env::temp_dir,
-    ffi::{CStr, CString},
-};
+use std::env::temp_dir;
 use tokio::sync::{mpsc, oneshot};
 use tracing::debug;
 use tracing_subscriber::EnvFilter;
@@ -115,10 +112,8 @@ fn office_runner(path: String, mut rx: mpsc::Receiver<OfficeMsg>) -> anyhow::Res
         .to_str()
         .context("failed to create temp out path")?;
 
-    let mut o2 = office.clone();
-
     office
-        .register_callback(move |ty, payload| {
+        .register_callback(move |ty, _payload| {
             debug!(?ty, "callback invoked");
         })
         .context("failed to register office callback")?;
@@ -156,21 +151,32 @@ fn convert_document(
 
     // Load document
     let input_url = urls::local_into_abs(temp_in_path).context("failed to create input url")?;
-    let mut doc = office
-        .document_load_with_options(input_url, "Batch=1")
-        .context("failed to load document")?;
+    let mut doc = match office.document_load_with_options(input_url, "Batch=1") {
+        Ok(value) => value,
+        Err(err) => match err {
+            OfficeError::OfficeError(err) => {
+                if err.contains("loadComponentFromURL returned an empty reference") {
+                    return Err(anyhow!("file is corrupted"));
+                }
+
+                if err.contains("Unsupported URL") {
+                    return Err(anyhow!("file is encrypted"));
+                }
+
+                return Err(OfficeError::OfficeError(err).into());
+            }
+            err => return Err(err.into()),
+        },
+    };
 
     debug!("document loaded");
 
     // Convert document
     let result = doc.save_as(output_url, "pdf", None);
 
-    if result {
-        debug!("conversion finished");
-    } else {
-        debug!("failed to convert")
+    if !result {
+        return Err(anyhow!("failed to convert file"));
     }
-
     // Read document context
     let bytes = std::fs::read(temp_out_path).context("failed to read temp out file")?;
 
