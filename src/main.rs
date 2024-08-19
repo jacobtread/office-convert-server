@@ -119,22 +119,7 @@ fn office_runner(path: String, mut rx: mpsc::Receiver<OfficeMsg>) -> anyhow::Res
 
     office
         .register_callback(move |ty, payload| {
-            let value = &*payload.to_string_lossy();
-            debug!(?ty, %value, "callback invoked");
-
-            if let CallbackType::JSDialog = ty {
-                if value.contains("is corrupt and therefore cannot be opened") {
-                    let value: serde_json::Value = serde_json::from_str(value).unwrap();
-                    let dialog = JSDialog(value);
-                    let id = dialog.get_id();
-
-                    if let Some(id) = id {
-                        let a = CString::new("{\"id\": \"no\", \"response\": 3}").unwrap();
-                        debug!(%id, "sending dialog event");
-                        o2.send_dialog_event(id, std::ptr::null()).unwrap();
-                    }
-                }
-            }
+            debug!(?ty, "callback invoked");
         })
         .context("failed to register office callback")?;
 
@@ -172,7 +157,7 @@ fn convert_document(
     // Load document
     let input_url = urls::local_into_abs(temp_in_path).context("failed to create input url")?;
     let mut doc = office
-        .document_load(input_url)
+        .document_load_with_options(input_url, "Batch=1")
         .context("failed to load document")?;
 
     debug!("document loaded");

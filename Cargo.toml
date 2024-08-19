@@ -47,6 +47,3 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 url = "2.2.2"
-
-[build-dependencies]
-bindgen = "0.63"

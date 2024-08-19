@@ -846,7 +846,6 @@ dependencies = [
  "anyhow",
  "axum",
  "axum_typed_multipart",
- "bindgen 0.63.0",
  "bytes",
  "dotenvy",
  "libreoffice-rs",

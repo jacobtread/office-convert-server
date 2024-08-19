@@ -18,6 +18,7 @@ use urls::DocUrl;
 use std::{
     ffi::{c_char, c_int, c_void, CStr, CString},
     os::raw::c_ulonglong,
+    ptr::null_mut,
 };
 
 /// A Wrapper for the `LibreOfficeKit` C API.
@@ -125,7 +126,34 @@ impl Office {
         get_error(self.lok, self.lok_class)
     }
 
-    pub fn register_callback<F: FnMut(CallbackType, &CStr)>(
+    pub fn set_option(&mut self, option: &str, value: &str) {
+        unsafe {
+            let option = CString::new(option).unwrap();
+            let value = CString::new(value).unwrap();
+
+            let set_option = (*self.lok_class)
+                .setOption
+                .expect("missing setOption function");
+            set_option(self.lok, option.as_ptr(), value.as_ptr());
+        }
+    }
+    pub fn dump_state(&mut self) -> Result<String, Error> {
+        unsafe {
+            let mut state: *mut c_char = null_mut();
+            let dump_state = (*self.lok_class)
+                .dumpState
+                .expect("missing dumpState function");
+            dump_state(self.lok, std::ptr::null(), &mut state);
+            if let Some(error) = self.get_error() {
+                return Err(Error::new(error));
+            }
+            let value = CString::from_raw(state);
+
+            Ok(value.to_string_lossy().to_string())
+        }
+    }
+
+    pub fn register_callback<F: FnMut(CallbackType, *const std::os::raw::c_char)>(
         &mut self,
         callback: F,
     ) -> Result<(), Error> {
@@ -136,8 +164,8 @@ impl Office {
             data: *mut std::os::raw::c_void,
         ) {
             // Get the callback function from the data argument
-            let callback: *mut Box<dyn FnMut(CallbackType, &CStr)> = data.cast();
-            let payload = CStr::from_ptr(payload);
+            let callback: *mut Box<dyn FnMut(CallbackType, *const std::os::raw::c_char)> =
+                data.cast();
 
             let ty = CallbackType::from_primitive(ty);
 
@@ -149,7 +177,7 @@ impl Office {
         }
 
         // Callback is double boxed then leaked
-        let callback_ptr: *mut Box<dyn FnMut(CallbackType, &CStr)> =
+        let callback_ptr: *mut Box<dyn FnMut(CallbackType, *const std::os::raw::c_char)> =
             Box::into_raw(Box::new(Box::new(callback)));
 
         unsafe {
@@ -174,6 +202,28 @@ impl Office {
                 .documentLoad
                 .expect("missing documentLoad function");
             document_load(self.lok, url.as_ptr())
+        };
+
+        // Check for errors
+        if let Some(error) = self.get_error() {
+            return Err(Error::new(error));
+        }
+
+        Ok(Document { doc: document })
+    }
+
+    pub fn document_load_with_options(
+        &mut self,
+        url: DocUrl,
+        options: &str,
+    ) -> Result<Document, Error> {
+        let options = CString::new(options).unwrap();
+        // Load the document
+        let document = unsafe {
+            let document_load_with_options = (*self.lok_class)
+                .documentLoadWithOptions
+                .expect("missing documentLoad function");
+            document_load_with_options(self.lok, url.as_ptr(), options.as_ptr())
         };
 
         // Check for errors
