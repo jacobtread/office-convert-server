@@ -12,7 +12,7 @@ description = "HTTP server for converting office file formats to PDFs"
 # Cheap sharable byte array type
 bytes = "1"
 
-libreofficekit = { version = "0", path = "../libreofficekit" }
+libreofficekit = { version = "0" }
 
 # Environment variables
 dotenvy = "0.15"

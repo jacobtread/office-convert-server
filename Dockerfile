@@ -1,8 +1,12 @@
 #  Builder part
 FROM debian:bullseye-slim AS builder
 
-RUN apt update && apt install -y libreofficekit-dev clang curl build-essential libssl-dev pkg-config ca-certificates
-
+RUN apt update && \
+    apt install -y libreofficekit-dev clang \
+    curl build-essential libssl-dev pkg-config \
+    ca-certificates && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # Install Rust
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
@@ -40,9 +44,7 @@ WORKDIR /app
 
 # Install dependencies
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    libreoffice \
-    sudo && \
+    apt-get install -y --no-install-recommends libreoffice && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
