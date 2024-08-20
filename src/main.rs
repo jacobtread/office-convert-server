@@ -5,7 +5,7 @@ use axum::{
 use axum_typed_multipart::{FieldData, TryFromMultipart, TypedMultipart};
 use bytes::Bytes;
 use error::DynHttpError;
-use libreofficekit::{urls, CallbackType, Office, OfficeError};
+use libreofficekit::{urls, Office, OfficeError};
 use rand::{distributions::Alphanumeric, Rng};
 use serde::Serialize;
 use std::env::temp_dir;
