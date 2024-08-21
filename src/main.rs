@@ -1,6 +1,10 @@
 use anyhow::{anyhow, Context};
 use axum::{
-    body::Body, extract::DefaultBodyLimit, http::Response, routing::get, Extension, Json, Router,
+    body::Body,
+    extract::DefaultBodyLimit,
+    http::Response,
+    routing::{get, post},
+    Extension, Json, Router,
 };
 use axum_typed_multipart::{FieldData, TryFromMultipart, TypedMultipart};
 use bytes::Bytes;
@@ -44,7 +48,8 @@ async fn main() -> anyhow::Result<()> {
 
     // Create the router
     let app = Router::new()
-        .route("/", get(is_busy).post(convert))
+        .route("/status", get(is_busy))
+        .route("/convert", post(convert))
         .layer(DefaultBodyLimit::max(1024 * 1024 * 1024))
         .layer(Extension(office_handle));
 
@@ -191,7 +196,7 @@ struct UploadAssetRequest {
     file: FieldData<Bytes>,
 }
 
-/// POST /
+/// POST /convert
 ///
 /// Converts the provided file to PDF format responding with the PDF file
 async fn convert(
@@ -228,7 +233,7 @@ struct BusyResult {
     is_busy: bool,
 }
 
-/// GET /
+/// GET /status
 ///
 /// Checks if the converter is currently busy
 async fn is_busy(Extension(office): Extension<OfficeHandle>) -> Json<BusyResult> {
