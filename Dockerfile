@@ -1,10 +1,18 @@
 #  Builder part
-FROM debian:bullseye-slim AS builder
+FROM debian:bookworm-slim AS builder
 
-RUN apt update && \
-    apt install -y libreofficekit-dev clang \
-    curl build-essential libssl-dev pkg-config \
-    ca-certificates && \
+# Set environment variables to avoid interaction during installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Add the Bookworm Backports repository
+RUN echo "deb http://deb.debian.org/debian bookworm-backports main" > /etc/apt/sources.list.d/bookworm-backports.list \
+    && apt-get update
+
+# Update and install required packages
+RUN apt-get -t bookworm-backports install -y libreofficekit-dev
+
+# Update and install required packages
+RUN apt-get install -y clang curl build-essential libssl-dev pkg-config ca-certificates && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -35,7 +43,7 @@ RUN cargo build --target x86_64-unknown-linux-gnu --release
 # ----------------------------------------
 # Runner part
 # ----------------------------------------
-FROM debian:bullseye-slim AS runner
+FROM debian:bookworm-slim AS runner
 
 # Set environment variables to avoid interaction during installation
 ENV DEBIAN_FRONTEND=noninteractive

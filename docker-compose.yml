@@ -2,7 +2,7 @@ services:
   office_convert_server_1:
     build:
       context: .
-      dockerfile: Test.Dockerfile
+      dockerfile: Dockerfile
     container_name: office_convert_server_1
     ports:
       - "3000:3000"
