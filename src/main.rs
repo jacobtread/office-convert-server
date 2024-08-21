@@ -2,19 +2,19 @@ use anyhow::{anyhow, Context};
 use axum::{
     body::Body,
     extract::DefaultBodyLimit,
-    http::Response,
+    http::{Response, StatusCode},
     routing::{get, post},
     Extension, Json, Router,
 };
 use axum_typed_multipart::{FieldData, TryFromMultipart, TypedMultipart};
 use bytes::Bytes;
 use error::DynHttpError;
-use libreofficekit::{urls, Office, OfficeError};
+use libreofficekit::{DocUrl, Office, OfficeError, OfficeOptionalFeatures};
 use rand::{distributions::Alphanumeric, Rng};
 use serde::Serialize;
 use std::env::temp_dir;
 use tokio::sync::{mpsc, oneshot};
-use tracing::debug;
+use tracing::{debug, error};
 use tracing_subscriber::EnvFilter;
 
 mod error;
@@ -50,6 +50,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/status", get(is_busy))
         .route("/convert", post(convert))
+        .route("/collect-garbage", post(collect_garbage))
         .layer(DefaultBodyLimit::max(1024 * 1024 * 1024))
         .layer(Extension(office_handle));
 
@@ -72,9 +73,14 @@ pub enum OfficeMsg {
     Convert {
         /// The file bytes to convert
         bytes: Bytes,
+
         /// The return channel for sending back the result
         tx: oneshot::Sender<anyhow::Result<Bytes>>,
     },
+
+    /// Tells office to clean up and trim its memory usage
+    CollectGarbage,
+
     /// Message to check if the server is busy, ignored
     BusyCheck,
 }
@@ -88,7 +94,11 @@ pub struct OfficeHandle(mpsc::Sender<OfficeMsg>);
 fn create_office_runner(path: String) -> OfficeHandle {
     let (tx, rx) = mpsc::channel(1);
 
-    std::thread::spawn(|| office_runner(path, rx));
+    std::thread::spawn(|| {
+        if let Err(cause) = office_runner(path, rx) {
+            error!(%cause, "failed to start office runner")
+        }
+    });
 
     OfficeHandle(tx)
 }
@@ -96,7 +106,7 @@ fn create_office_runner(path: String) -> OfficeHandle {
 /// Main event loop for an office runner
 fn office_runner(path: String, mut rx: mpsc::Receiver<OfficeMsg>) -> anyhow::Result<()> {
     // Create office instance
-    let mut office = Office::new(&path).context("failed to create office instance")?;
+    let office = Office::new(&path).context("failed to create office instance")?;
 
     let tmp_dir = temp_dir();
 
@@ -117,8 +127,22 @@ fn office_runner(path: String, mut rx: mpsc::Receiver<OfficeMsg>) -> anyhow::Res
         .to_str()
         .context("failed to create temp out path")?;
 
+    debug!(%temp_in_path, %temp_out_path);
+
+    // Create office type safe paths
+    let input_url = DocUrl::local_as_abs(temp_in_path).context("failed to create input url")?;
+    let output_url = DocUrl::local_as_abs(temp_out_path).context("failed to create output url")?;
+
+    // Allow prompting for passwords
     office
-        .register_callback(move |ty, _payload| {
+        .set_optional_features(
+            OfficeOptionalFeatures::DOCUMENT_PASSWORD
+                | OfficeOptionalFeatures::DOCUMENT_PASSWORD_TO_MODIFY,
+        )
+        .context("failed to set optional features")?;
+
+    office
+        .register_callback(|ty, _payload| {
             debug!(?ty, "callback invoked");
         })
         .context("failed to register office callback")?;
@@ -127,12 +151,26 @@ fn office_runner(path: String, mut rx: mpsc::Receiver<OfficeMsg>) -> anyhow::Res
     while let Some(msg) = rx.blocking_recv() {
         let (input, output) = match msg {
             OfficeMsg::Convert { bytes, tx } => (bytes, tx),
+
+            OfficeMsg::CollectGarbage => {
+                if let Err(cause) = office.trim_memory(2000) {
+                    error!(%cause, "failed to collect garbage")
+                }
+                continue;
+            }
             // Busy checks are ignored
             OfficeMsg::BusyCheck => continue,
         };
 
         // Convert document
-        let result = convert_document(&mut office, temp_in_path, temp_out_path, input);
+        let result = convert_document(
+            &office,
+            temp_in_path,
+            temp_out_path,
+            &input_url,
+            &output_url,
+            input,
+        );
 
         // Send response
         _ = output.send(result);
@@ -144,22 +182,25 @@ fn office_runner(path: String, mut rx: mpsc::Receiver<OfficeMsg>) -> anyhow::Res
 /// Converts the provided document bytes into PDF format returning
 /// the converted bytes
 fn convert_document(
-    office: &mut Office,
-    temp_in_path: &str,
-    temp_out_path: &str,
+    office: &Office,
+
+    temp_in_str: &str,
+    temp_out_str: &str,
+
+    temp_in_path: &DocUrl,
+    temp_out_path: &DocUrl,
     input: Bytes,
 ) -> anyhow::Result<Bytes> {
     // Write to temp file
-    std::fs::write(temp_in_path, input).context("failed to write temp input")?;
-
-    let output_url = urls::local_as_abs(temp_out_path).context("failed to create output url")?;
+    std::fs::write(temp_in_str, input).context("failed to write temp input")?;
 
     // Load document
-    let input_url = urls::local_into_abs(temp_in_path).context("failed to create input url")?;
-    let mut doc = match office.document_load_with_options(input_url, "Batch=1") {
+    let mut doc = match office.document_load_with_options(temp_in_path, "Batch=1") {
         Ok(value) => value,
         Err(err) => match err {
             OfficeError::OfficeError(err) => {
+                error!(%err, "failed to load document");
+
                 if err.contains("loadComponentFromURL returned an empty reference") {
                     return Err(anyhow!("file is corrupted"));
                 }
@@ -177,13 +218,17 @@ fn convert_document(
     debug!("document loaded");
 
     // Convert document
-    let result = doc.save_as(output_url, "pdf", None);
+    let result = doc.save_as(temp_out_path, "pdf", None)?;
+
+    // Attempt to free up some memory
+    _ = office.trim_memory(1000);
 
     if !result {
         return Err(anyhow!("failed to convert file"));
     }
+
     // Read document context
-    let bytes = std::fs::read(temp_out_path).context("failed to read temp out file")?;
+    let bytes = std::fs::read(temp_out_str).context("failed to read temp out file")?;
 
     Ok(Bytes::from(bytes))
 }
@@ -239,4 +284,12 @@ struct BusyResult {
 async fn is_busy(Extension(office): Extension<OfficeHandle>) -> Json<BusyResult> {
     let is_locked = office.0.try_send(OfficeMsg::BusyCheck).is_err();
     Json(BusyResult { is_busy: is_locked })
+}
+
+/// POST /collect-garbage
+///
+/// Collects garbage from the office converter
+async fn collect_garbage(Extension(office): Extension<OfficeHandle>) -> StatusCode {
+    _ = office.0.send(OfficeMsg::CollectGarbage).await;
+    StatusCode::OK
 }

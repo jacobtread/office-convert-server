@@ -12,13 +12,10 @@ description = "HTTP server for converting office file formats to PDFs"
 # Cheap sharable byte array type
 bytes = "1"
 
-libreofficekit = { version = "0" }
+libreofficekit = { version = "0", path = "../libreofficekit" }
 
 # Environment variables
 dotenvy = "0.15"
-
-# LibreOfficeKit for conversion
-libreoffice-rs = "0.3"
 
 # Random generation (For temp file names)
 rand = "0.8"
@@ -43,3 +40,4 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 url = "2.2.2"
+parking_lot = "0.12.3"
