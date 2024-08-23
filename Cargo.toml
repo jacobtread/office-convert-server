@@ -8,6 +8,9 @@ authors = ["Jacobtread <jacobtread@gmail.com>"]
 readme = "README.md"
 description = "HTTP server for converting office file formats to PDFs"
 
+[workspace]
+members = [".", "./client"]
+
 [dependencies]
 # Cheap sharable byte array type
 bytes = "1"
