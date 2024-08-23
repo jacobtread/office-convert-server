@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context};
 use axum::{
     body::Body,
     extract::DefaultBodyLimit,
-    http::{Response, StatusCode},
+    http::{header, HeaderValue, Response, StatusCode},
     routing::{get, post},
     Extension, Json, Router,
 };
@@ -265,6 +265,10 @@ async fn convert(
 
     // Build the response
     let response = Response::builder()
+        .header(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/pdf"),
+        )
         .body(Body::from(converted))
         .context("failed to create response")?;
 
