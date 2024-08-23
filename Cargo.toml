@@ -15,7 +15,7 @@ members = [".", "./client"]
 # Cheap sharable byte array type
 bytes = "1"
 
-libreofficekit = "0.0.3"
+libreofficekit = { version = "0.0.4" }
 
 # Environment variables
 dotenvy = "0.15"
@@ -42,6 +42,6 @@ thiserror = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-url = "2.2.2"
-parking_lot = "0.12.3"
-clap = { version = "4.5.16", features = ["derive"] }
+url = "2"
+parking_lot = "0.12"
+clap = { version = "4.5", features = ["derive"] }
