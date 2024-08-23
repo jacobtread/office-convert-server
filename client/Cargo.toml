@@ -1,7 +1,12 @@
 [package]
 name = "office-convert-client"
-version = "0.1.0"
+version = "0.0.0"
 edition = "2021"
+license = "MIT"
+repository = "https://github.com/jacobtread/office-convert-server"
+authors = ["Jacobtread <jacobtread@gmail.com>"]
+readme = "../README.md"
+description = "Client library for interracting with office-convert-server"
 
 [dependencies]
 async-trait = "0.1"
