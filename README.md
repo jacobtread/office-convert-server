@@ -1,8 +1,10 @@
 # Office convert server 
 
-Simple server for converting office file formats into PDF files
+Simple server for converting office file formats into PDF files built on top of LibreOffice
 
 ## Requirements
+
+Requires LibreOffice and LibreOfficeKit
 
 Debian:
 
