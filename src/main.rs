@@ -48,7 +48,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Create the router
     let app = Router::new()
-        .route("/status", get(is_busy))
+        .route("/status", get(status))
         .route("/convert", post(convert))
         .route("/collect-garbage", post(collect_garbage))
         .layer(DefaultBodyLimit::max(1024 * 1024 * 1024))
@@ -273,7 +273,7 @@ async fn convert(
 
 /// Result from checking the server busy state
 #[derive(Serialize)]
-struct BusyResult {
+struct StatusResponse {
     /// Whether the server is busy
     is_busy: bool,
 }
@@ -281,9 +281,9 @@ struct BusyResult {
 /// GET /status
 ///
 /// Checks if the converter is currently busy
-async fn is_busy(Extension(office): Extension<OfficeHandle>) -> Json<BusyResult> {
+async fn status(Extension(office): Extension<OfficeHandle>) -> Json<StatusResponse> {
     let is_locked = office.0.try_send(OfficeMsg::BusyCheck).is_err();
-    Json(BusyResult { is_busy: is_locked })
+    Json(StatusResponse { is_busy: is_locked })
 }
 
 /// POST /collect-garbage
