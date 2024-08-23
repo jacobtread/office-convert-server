@@ -702,7 +702,9 @@ dependencies = [
 
 [[package]]
 name = "libreofficekit"
-version = "0.0.1"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b67a2585e2abc1ca51c9b170aae3b67bb2250d449f3143b2fe3cbf4be7b0b241"
 dependencies = [
  "bindgen",
  "bitflags",
