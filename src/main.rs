@@ -15,7 +15,7 @@ use rand::{distributions::Alphanumeric, Rng};
 use serde::Serialize;
 use std::env::temp_dir;
 use tokio::sync::{mpsc, oneshot};
-use tracing::{debug, error, level_filters::LevelFilter};
+use tracing::{debug, error};
 use tracing_subscriber::EnvFilter;
 
 mod error;
@@ -92,7 +92,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // Create office access
-    let office_handle = create_office_runner(office_path);
+    let office_handle = create_office_runner(office_path).await?;
 
     // Create the router
     let app = Router::new()
@@ -141,20 +141,36 @@ pub struct OfficeHandle(mpsc::Sender<OfficeMsg>);
 
 /// Creates a new office runner on its own thread providing
 /// a handle to access it via messages
-fn create_office_runner(path: String) -> OfficeHandle {
+async fn create_office_runner(path: String) -> anyhow::Result<OfficeHandle> {
     let (tx, rx) = mpsc::channel(1);
 
-    std::thread::spawn(|| {
-        if let Err(cause) = office_runner(path, rx) {
-            error!(%cause, "failed to start office runner")
+    let (startup_tx, startup_rx) = oneshot::channel();
+
+    std::thread::spawn(move || {
+        let mut startup_tx = Some(startup_tx);
+
+        if let Err(cause) = office_runner(path, rx, &mut startup_tx) {
+            error!(%cause, "failed to start office runner");
+
+            // Send the error to the startup channel if its still available
+            if let Some(startup_tx) = startup_tx.take() {
+                _ = startup_tx.send(Err(cause));
+            }
         }
     });
 
-    OfficeHandle(tx)
+    // Wait for a successful startup
+    startup_rx.await.context("startup channel unavailable")??;
+
+    Ok(OfficeHandle(tx))
 }
 
 /// Main event loop for an office runner
-fn office_runner(path: String, mut rx: mpsc::Receiver<OfficeMsg>) -> anyhow::Result<()> {
+fn office_runner(
+    path: String,
+    mut rx: mpsc::Receiver<OfficeMsg>,
+    startup_tx: &mut Option<oneshot::Sender<anyhow::Result<()>>>,
+) -> anyhow::Result<()> {
     // Create office instance
     let office = Office::new(&path).context("failed to create office instance")?;
 
@@ -194,6 +210,11 @@ fn office_runner(path: String, mut rx: mpsc::Receiver<OfficeMsg>) -> anyhow::Res
             debug!(?ty, "callback invoked");
         })
         .context("failed to register office callback")?;
+
+    // Report successful startup
+    if let Some(startup_tx) = startup_tx.take() {
+        _ = startup_tx.send(Ok(()));
+    }
 
     // Get next message
     while let Some(msg) = rx.blocking_recv() {
