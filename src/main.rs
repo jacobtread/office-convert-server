@@ -34,10 +34,6 @@ struct Args {
     /// Host to bind the server to, defaults to 0.0.0.0
     #[arg(long)]
     host: Option<String>,
-
-    /// Logging level to use
-    #[arg(long, default_value_t = LevelFilter::INFO)]
-    logging: LevelFilter,
 }
 
 #[tokio::main]
