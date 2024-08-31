@@ -14,7 +14,7 @@ use libreofficekit::{CallbackType, DocUrl, Office, OfficeError, OfficeOptionalFe
 use parking_lot::Mutex;
 use rand::{distributions::Alphanumeric, Rng};
 use serde::Serialize;
-use std::{env::temp_dir, path::PathBuf, rc::Rc};
+use std::{env::temp_dir, ffi::CStr, path::PathBuf, rc::Rc};
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, error};
 use tracing_subscriber::EnvFilter;
@@ -224,7 +224,7 @@ fn office_runner(
             let runner_state = runner_state.clone();
             let input_url = input_url.clone();
 
-            move |office, ty, _payload| {
+            move |office, ty, payload| {
                 debug!(?ty, "callback invoked");
 
                 let state = &mut *runner_state.lock();
@@ -236,6 +236,14 @@ fn office_runner(
                     if let Err(cause) = office.set_document_password(&input_url, None) {
                         error!(?cause, "failed to set document password");
                     }
+                }
+
+                if let CallbackType::JSDialog = ty {
+                    let payload = unsafe { CStr::from_ptr(payload) };
+                    let value: serde_json::Value =
+                        serde_json::from_slice(payload.to_bytes()).unwrap();
+
+                    debug!(?value, "js dialog request");
                 }
             }
         })
@@ -300,29 +308,30 @@ fn convert_document(
     std::fs::write(temp_in_str, input).context("failed to write temp input")?;
 
     // Load document
-    let mut doc = match office.document_load_with_options(temp_in_path, "InteractionHandler=0") {
-        Ok(value) => value,
-        Err(err) => match err {
-            OfficeError::OfficeError(err) => {
-                error!(%err, "failed to load document");
+    let mut doc =
+        match office.document_load_with_options(temp_in_path, "InteractionHandler=0,Batch=1") {
+            Ok(value) => value,
+            Err(err) => match err {
+                OfficeError::OfficeError(err) => {
+                    error!(%err, "failed to load document");
 
-                let state = &*runner_state.lock();
+                    let _state = &*runner_state.lock();
 
-                // File was encrypted with a password
-                if err.contains("Unsupported URL") && state.password_requested {
-                    return Err(anyhow!("file is encrypted"));
+                    // File was encrypted with a password
+                    if err.contains("Unsupported URL") {
+                        return Err(anyhow!("file is encrypted"));
+                    }
+
+                    // File is malformed or corrupted
+                    if err.contains("loadComponentFromURL returned an empty reference") {
+                        return Err(anyhow!("file is corrupted"));
+                    }
+
+                    return Err(OfficeError::OfficeError(err).into());
                 }
-
-                // File is malformed or corrupted
-                if err.contains("loadComponentFromURL returned an empty reference") {
-                    return Err(anyhow!("file is corrupted"));
-                }
-
-                return Err(OfficeError::OfficeError(err).into());
-            }
-            err => return Err(err.into()),
-        },
-    };
+                err => return Err(err.into()),
+            },
+        };
 
     debug!("document loaded");
 
