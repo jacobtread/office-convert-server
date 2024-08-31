@@ -10,10 +10,11 @@ use axum_typed_multipart::{FieldData, TryFromMultipart, TypedMultipart};
 use bytes::Bytes;
 use clap::Parser;
 use error::DynHttpError;
-use libreofficekit::{DocUrl, Office, OfficeError, OfficeOptionalFeatures};
+use libreofficekit::{CallbackType, DocUrl, Office, OfficeError, OfficeOptionalFeatures};
+use parking_lot::Mutex;
 use rand::{distributions::Alphanumeric, Rng};
 use serde::Serialize;
-use std::env::temp_dir;
+use std::{env::temp_dir, path::PathBuf, rc::Rc};
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, error};
 use tracing_subscriber::EnvFilter;
@@ -58,16 +59,23 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
-    let mut office_path: Option<String> = args.office_path;
+    let mut office_path: Option<PathBuf> = None;
+
+    // Try loading office path from command line
+    if let Some(path) = args.office_path {
+        office_path = Some(PathBuf::from(&path));
+    }
 
     // Try loading office path from environment variables
     if office_path.is_none() {
-        office_path = std::env::var("LIBREOFFICE_SDK_PATH").ok()
+        if let Ok(path) = std::env::var("LIBREOFFICE_SDK_PATH") {
+            office_path = Some(PathBuf::from(&path));
+        }
     }
 
     // Try determine default office path
     if office_path.is_none() {
-        office_path = Office::find_install_path().map(|value| value.to_string());
+        office_path = Office::find_install_path();
     }
 
     // Check a path was provided
@@ -79,7 +87,7 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    debug!("using libreoffice install from: {office_path}");
+    debug!("using libreoffice install from: {}", office_path.display());
 
     // Determine the address to run the server on
     let server_address = if args.host.is_some() || args.port.is_some() {
@@ -141,7 +149,7 @@ pub struct OfficeHandle(mpsc::Sender<OfficeMsg>);
 
 /// Creates a new office runner on its own thread providing
 /// a handle to access it via messages
-async fn create_office_runner(path: String) -> anyhow::Result<OfficeHandle> {
+async fn create_office_runner(path: PathBuf) -> anyhow::Result<OfficeHandle> {
     let (tx, rx) = mpsc::channel(1);
 
     let (startup_tx, startup_rx) = oneshot::channel();
@@ -165,9 +173,14 @@ async fn create_office_runner(path: String) -> anyhow::Result<OfficeHandle> {
     Ok(OfficeHandle(tx))
 }
 
+#[derive(Debug, Default)]
+struct RunnerState {
+    password_requested: bool,
+}
+
 /// Main event loop for an office runner
 fn office_runner(
-    path: String,
+    path: PathBuf,
     mut rx: mpsc::Receiver<OfficeMsg>,
     startup_tx: &mut Option<oneshot::Sender<anyhow::Result<()>>>,
 ) -> anyhow::Result<()> {
@@ -194,20 +207,37 @@ fn office_runner(
         .context("failed to create temp out path")?;
 
     // Create office type safe paths
-    let input_url = DocUrl::local_as_abs(temp_in_path).context("failed to create input url")?;
-    let output_url = DocUrl::local_as_abs(temp_out_path).context("failed to create output url")?;
+    let input_url =
+        DocUrl::from_absolute_path(temp_in_path).context("failed to create input url")?;
+    let output_url =
+        DocUrl::from_absolute_path(temp_out_path).context("failed to create output url")?;
+
+    let runner_state = Rc::new(Mutex::new(RunnerState::default()));
 
     // Allow prompting for passwords
     office
-        .set_optional_features(
-            OfficeOptionalFeatures::DOCUMENT_PASSWORD
-                | OfficeOptionalFeatures::DOCUMENT_PASSWORD_TO_MODIFY,
-        )
+        .set_optional_features(OfficeOptionalFeatures::DOCUMENT_PASSWORD)
         .context("failed to set optional features")?;
 
     office
-        .register_callback(|ty, _payload| {
-            debug!(?ty, "callback invoked");
+        .register_callback({
+            let runner_state = runner_state.clone();
+            let input_url = input_url.clone();
+
+            move |office, ty, _payload| {
+                debug!(?ty, "callback invoked");
+
+                let state = &mut *runner_state.lock();
+
+                if let CallbackType::DocumentPassword = ty {
+                    state.password_requested = true;
+
+                    // Provide now password
+                    if let Err(cause) = office.set_document_password(&input_url, None) {
+                        error!(?cause, "failed to set document password");
+                    }
+                }
+            }
         })
         .context("failed to register office callback")?;
 
@@ -239,10 +269,14 @@ fn office_runner(
             &input_url,
             &output_url,
             input,
+            &runner_state,
         );
 
         // Send response
         _ = output.send(result);
+
+        // Reset runner state
+        *runner_state.lock() = RunnerState::default();
     }
 
     Ok(())
@@ -259,23 +293,29 @@ fn convert_document(
     temp_in_path: &DocUrl,
     temp_out_path: &DocUrl,
     input: Bytes,
+
+    runner_state: &Rc<Mutex<RunnerState>>,
 ) -> anyhow::Result<Bytes> {
     // Write to temp file
     std::fs::write(temp_in_str, input).context("failed to write temp input")?;
 
     // Load document
-    let mut doc = match office.document_load_with_options(temp_in_path, "Batch=1") {
+    let mut doc = match office.document_load_with_options(temp_in_path, "InteractionHandler=0") {
         Ok(value) => value,
         Err(err) => match err {
             OfficeError::OfficeError(err) => {
                 error!(%err, "failed to load document");
 
-                if err.contains("loadComponentFromURL returned an empty reference") {
-                    return Err(anyhow!("file is corrupted"));
+                let state = &*runner_state.lock();
+
+                // File was encrypted with a password
+                if err.contains("Unsupported URL") && state.password_requested {
+                    return Err(anyhow!("file is encrypted"));
                 }
 
-                if err.contains("Unsupported URL") {
-                    return Err(anyhow!("file is encrypted"));
+                // File is malformed or corrupted
+                if err.contains("loadComponentFromURL returned an empty reference") {
+                    return Err(anyhow!("file is corrupted"));
                 }
 
                 return Err(OfficeError::OfficeError(err).into());
