@@ -4,7 +4,7 @@ use std::{sync::Arc, time::Duration};
 use thiserror::Error;
 use tokio::{
     sync::{Mutex, Notify},
-    time::Instant,
+    time::{sleep, timeout, Instant},
 };
 use tracing::{debug, error};
 
@@ -45,6 +45,27 @@ impl OfficeConvertLoadBalancer {
             inner: Arc::new(inner),
         }
     }
+
+    /// Checks if all client connections are blocked externally, used
+    /// to handle the case when to not wait on notifiers
+    pub async fn is_externally_blocked(&self) -> bool {
+        let inner = &*self.inner;
+        for client in inner.clients.iter() {
+            let client = match timeout(Duration::from_secs(1), client.lock()).await {
+                Ok(value) => value,
+                // Couldn't obtain the lock, this client is likely in use so we can
+                // consider ourselves to not be externally blocked
+                Err(_) => return false,
+            };
+
+            // Client is busy externally
+            if client.busy_externally_at.is_none() {
+                return false;
+            }
+        }
+
+        true
+    }
 }
 
 struct OfficeConvertLoadBalancerInner {
@@ -72,10 +93,16 @@ pub enum LoadBalanceError {
 /// Time in-between external busy checks
 const RETRY_BUSY_CHECK_AFTER: Duration = Duration::from_secs(5);
 
+/// Time to wait before repeated attempts
+const RETRY_SINGLE_EXTERNAL: Duration = Duration::from_secs(1);
+
 #[async_trait]
 impl ConvertOffice for OfficeConvertLoadBalancer {
     async fn convert(&self, file: Vec<u8>) -> Result<bytes::Bytes, RequestError> {
         let inner = &*self.inner;
+
+        let total_clients = inner.clients.len();
+        let multiple_clients = total_clients > 1;
 
         loop {
             for (index, client) in inner.clients.iter().enumerate() {
@@ -92,8 +119,8 @@ impl ConvertOffice for OfficeConvertLoadBalancer {
                 if let Some(busy_externally_at) = client.busy_externally_at {
                     let since_check = now.duration_since(busy_externally_at);
 
-                    // Don't check this server if the busy check timeout hasn't passed
-                    if since_check < RETRY_BUSY_CHECK_AFTER {
+                    // Don't check this server if the busy check timeout hasn't passed (only if we have multiple choices)
+                    if since_check < RETRY_BUSY_CHECK_AFTER && multiple_clients {
                         continue;
                     }
                 }
@@ -117,6 +144,9 @@ impl ConvertOffice for OfficeConvertLoadBalancer {
                     continue;
                 }
 
+                // Clear external busy state
+                client.busy_externally_at = None;
+
                 debug!("obtained available server {index} for convert");
 
                 let response = client.client.convert(file).await;
@@ -125,6 +155,15 @@ impl ConvertOffice for OfficeConvertLoadBalancer {
                 inner.free_notify.notify_waiters();
 
                 return response;
+            }
+
+            // Handle case where all clients are blocked externally, we won't be woken by any clients
+            // in this case, so instead of waiting for the notifier we wait a short duration
+            let externally_blocked = self.is_externally_blocked().await;
+            if externally_blocked {
+                debug!("all servers are externally blocked, delaying next attempt");
+                sleep(RETRY_SINGLE_EXTERNAL).await;
+                continue;
             }
 
             debug!("no available servers, waiting until one is available");
