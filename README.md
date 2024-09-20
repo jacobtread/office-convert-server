@@ -45,3 +45,39 @@ LIBREOFFICE_SDK_PATH=/usr/lib64/libreoffice/program
 ```
 
 Update `LIBREOFFICE_SDK_PATH` your specific LibreofficeSDK path. This is **NOT** your Libreoffice path
+
+# Building with docker
+
+You can build the binary within docker using the following steps:
+
+## Build docker image
+
+Build the docker image from the Dockerfile
+
+```
+docker build -t office_convert .
+```
+
+## Create temp container
+
+Create a temporary container for the converter
+
+```
+docker create --name temp_container office_convert
+```
+
+## Copy binary from temp container
+
+Then copy the binary from the container to your host:
+
+```
+docker cp temp_container:/app/office-convert-server ./office-convert-server
+```
+
+## Cleanup the temp container
+
+Once you have the binary on your host, you can remove the temporary container:
+
+```
+docker rm temp_container
+```
