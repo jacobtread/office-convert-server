@@ -32,10 +32,13 @@ WORKDIR /app
 # Dependency precachng
 COPY Cargo.toml .
 COPY Cargo.lock .
+COPY client/Cargo.toml ./client/Cargo.toml
 RUN mkdir src && echo "fn main() {}" >src/main.rs
+RUN mkdir client/src && echo "fn main() {}" >client/src/main.rs
 RUN cargo build --target x86_64-unknown-linux-gnu --release
 
 COPY src src
+COPY client/src client/src
 RUN touch src/main.rs
 
 RUN cargo build --target x86_64-unknown-linux-gnu --release
