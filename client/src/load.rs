@@ -1,6 +1,9 @@
 use crate::{ConvertOffice, OfficeConvertClient, RequestError};
 use async_trait::async_trait;
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{atomic::AtomicUsize, Arc},
+    time::Duration,
+};
 use thiserror::Error;
 use tokio::{
     sync::{Mutex, Notify},
@@ -39,6 +42,7 @@ impl OfficeConvertLoadBalancer {
         let inner = OfficeConvertLoadBalancerInner {
             clients,
             free_notify: Notify::new(),
+            active: AtomicUsize::new(0),
         };
 
         Self {
@@ -69,8 +73,11 @@ impl OfficeConvertLoadBalancer {
 }
 
 struct OfficeConvertLoadBalancerInner {
-    // Available clients the load balancer can use
+    /// Available clients the load balancer can use
     clients: Vec<Mutex<LoadBalancedClient>>,
+
+    /// Number of active in use clients
+    active: AtomicUsize,
 
     /// Notifier for connections that are no longer busy
     free_notify: Notify,
@@ -95,6 +102,9 @@ const RETRY_BUSY_CHECK_AFTER: Duration = Duration::from_secs(5);
 
 /// Time to wait before repeated attempts
 const RETRY_SINGLE_EXTERNAL: Duration = Duration::from_secs(1);
+
+/// Timeout to wait on the notifier for
+const NOTIFY_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[async_trait]
 impl ConvertOffice for OfficeConvertLoadBalancer {
@@ -149,18 +159,33 @@ impl ConvertOffice for OfficeConvertLoadBalancer {
 
                 debug!("obtained available server {index} for convert");
 
+                // Increase active counter
+                inner
+                    .active
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
                 let response = client.client.convert(file).await;
 
                 // Notify waiters that this server is now free
                 inner.free_notify.notify_waiters();
 
+                // Decrease active counter
+                inner
+                    .active
+                    .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+
                 return response;
             }
 
+            let active_counter = inner.active.load(std::sync::atomic::Ordering::SeqCst);
+
             // Handle case where all clients are blocked externally, we won't be woken by any clients
             // in this case, so instead of waiting for the notifier we wait a short duration
+            //
+            // If number of active connections are zero we can assume we are blocked for some reason
+            // likely an external factor, we would never get notified so we must poll instead?
             let externally_blocked = self.is_externally_blocked().await;
-            if externally_blocked {
+            if externally_blocked || active_counter < 1 {
                 debug!("all servers are externally blocked, delaying next attempt");
                 sleep(RETRY_SINGLE_EXTERNAL).await;
                 continue;
@@ -168,8 +193,9 @@ impl ConvertOffice for OfficeConvertLoadBalancer {
 
             debug!("no available servers, waiting until one is available");
 
-            // All servers are in use, wait for the free notifier
-            inner.free_notify.notified().await;
+            // All servers are in use, wait for the free notifier, this has a timeout
+            // incase a complication occurs
+            _ = timeout(NOTIFY_TIMEOUT, inner.free_notify.notified()).await;
         }
     }
 }
