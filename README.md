@@ -4,27 +4,27 @@ Simple server for converting office file formats into PDF files built on top of 
 
 ## Requirements
 
-Requires LibreOffice and LibreOfficeKit
+Requires LibreOffice 
 
 Debian:
 
 ```
-sudo apt-get install libreoffice libreofficekit-dev clang
+sudo apt-get install libreoffice
 ```
 > [!NOTE]
-> On Debian bullseye you may not have the latest version of the libreofficekit-dev package which will likely cause the build to fail due to missing functions. I recommend building using Fedora or using Debian Bookworm with the "Bookworm Backports" package repo, which you can add using the following command:
+> On Debian bullseye you may not have the latest version of the libreoffice package. Which may result in some functionality being unavailable. you can use Debian Bookworm with the "Bookworm Backports" package repo, which you can add using the following command:
 > ```sh
 > echo "deb http://deb.debian.org/debian bookworm-backports main" | sudo tee /etc/apt/sources.list.d/bookworm-backports.list > /dev/null 
 > ```
-> The install libreofficekit-dev through that package repo:
+> The install libreoffice through that package repo:
 > ```sh
-> sudo apt-get -t bookworm-backports install -y libreofficekit-dev
+> sudo apt-get -t bookworm-backports install -y libreoffice
 > ```
 
 Fedora:
 
 ```sh
-sudo dnf install libreoffice libreoffice-sdk libreofficekit-devel clang
+sudo dnf install libreoffice
 ```
 
 Ensure you set the following environment variable:
