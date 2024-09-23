@@ -2,6 +2,41 @@
 
 Simple server for converting office file formats into PDF files built on top of LibreOffice using https://github.com/jacobtread/libreofficekit
 
+This repository contains two separate crates, the first being `office-convert-server` which is the binary crate for the server itself. The second is `office-convert-client` in the client directory which is a library crate providing a client for interacting with the server as well as providing a load balancing implementation.
+
+## Running the server 
+
+> [!IMPORTANT]
+>
+> It's important to take note of the LibreOffice version you are using, as per [LibreOffice Support](https://github.com/jacobtread/libreofficekit?tab=readme-ov-file#libreoffice-support) some newer versions of LibreOffice will have problems with segfaults after conversions so I recommend you have the server managed by an external process that will restart it (along with using the load balancer which will be able to wait for the server to be available)
+>
+> Alternatively use the older version listed above in order to avoid segfaults. This is a bug in LibreOffice itself and not in this server / backing library
+
+### Server CLI arguments
+
+You can provide arguments to the server to control its behavior:
+
+| Argument               | Short Form | Required | Default                   | Description                                     |
+| ---------------------- | ---------- | -------- | ------------------------- | ----------------------------------------------- |
+| `--office-path <path>` | None       | No       | Attempt from common paths | Path to the office /program installation folder |
+| `--host <host>`        | None       | No       | 0.0.0.0                   | Host to bind the server on                      |
+| `--port <port>`        | None       | No       | 3000                      | Port to bind the server on                      |
+| `--version`            | `-V`       | No       |                           | Logs the server version information             |
+| `--help`               | `-h`       | No       |                           | Shows the available commands                    |
+
+> [!NOTE]
+>
+> Command line arguments take priority over environment variables and other defaults
+
+### Environment variables
+
+| Variable Name          | Required | Default      | Description                                                                                                                                                                                               |
+| ---------------------- | -------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LIBREOFFICE_SDK_PATH` | No       |              | Path to the office /program installation folder                                                                                                                                                           |
+| `SERVER_ADDRESS`       | No       | 0.0.0.0:3000 | Specifies the socket address to bind the server to                                                                                                                                                        |
+| `RUST_LOG`             | No       |              | Controls the logging behavior, see [Filtering Events with Environment Variables](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/index.html#filtering-events-with-environment-variables) |
+
+
 ## Requirements
 
 Requires LibreOffice 
