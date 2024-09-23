@@ -78,11 +78,11 @@ Update `LIBREOFFICE_SDK_PATH` your specific LibreofficeSDK path. This is **NOT**
 On Linux often times you will be able to omit this if your install is at the common paths of `/usr/lib64/libreoffice/program`, `/usr/lib/libreoffice/program`,
 or `/opt/libreoffice-{VERSION}/program`.
 
-# Building with docker
+## Building with docker
 
 You can build the binary within docker using the following steps:
 
-## Build docker image
+### Build docker image
 
 Build the docker image from the Dockerfile
 
@@ -90,7 +90,7 @@ Build the docker image from the Dockerfile
 docker build -t office_convert .
 ```
 
-## Create temp container
+### Create temp container
 
 Create a temporary container for the converter
 
@@ -98,7 +98,7 @@ Create a temporary container for the converter
 docker create --name temp_container office_convert
 ```
 
-## Copy binary from temp container
+### Copy binary from temp container
 
 Then copy the binary from the container to your host:
 
@@ -106,7 +106,7 @@ Then copy the binary from the container to your host:
 docker cp temp_container:/app/office-convert-server ./office-convert-server
 ```
 
-## Cleanup the temp container
+### Cleanup the temp container
 
 Once you have the binary on your host, you can remove the temporary container:
 
@@ -114,15 +114,15 @@ Once you have the binary on your host, you can remove the temporary container:
 docker rm temp_container
 ```
 
-# Available Endpoints
+## Available Endpoints
 
 Below are the available endpoints, these are all accessible through the provided `office-convert-client` Rust client library.
 
-## GET /status (Server status)
+### GET /status (Server status)
 
 Obtains the current status of the server, used to check if the server is currently busy processing a document. 
 
-### Example Response
+#### Example Response
 
 ```json
 {
@@ -130,11 +130,11 @@ Obtains the current status of the server, used to check if the server is current
 }
 ```
 
-## GET /office-version (LibreOffice version details)
+### GET /office-version (LibreOffice version details)
 
 Reports version information for the underlying LibreOffice instance 
 
-### Example Response
+#### Example Response
 
 ```json
 {
@@ -148,11 +148,11 @@ Reports version information for the underlying LibreOffice instance
 > 
 > Will return 404 error if the LibreOffice version is too old to support this functionality
 
-## GET /supported-formats (Formats supported by the server)
+### GET /supported-formats (Formats supported by the server)
 
 Reports the file mime types supported by the LibreOffice install
 
-### Example Response
+#### Example Response
 
 ```json
 [
@@ -168,14 +168,14 @@ Reports the file mime types supported by the LibreOffice install
 > 
 > Will return 404 error if the LibreOffice version is too old to support this functionality
 
-## POST /convert (Convert a file)
+### POST /convert (Convert a file)
 
 Upload a file for conversion, this takes a multipart form data POST request containing 
 a "file" field which is the file to convert.
 
 Will respond with the file converted to PDF format as bytes
 
-## POST /collect-garbage (Tell LibreOffice to clean up memory)
+### POST /collect-garbage (Tell LibreOffice to clean up memory)
 
 Takes in no arguments, will always respond with a 200 OK status. Office will be told to collect garbage after any other
 waiting requests are processed
