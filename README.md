@@ -73,7 +73,10 @@ SERVER_ADDRESS=0.0.0.0:3000
 LIBREOFFICE_SDK_PATH=/usr/lib64/libreoffice/program
 ```
 
-Update `LIBREOFFICE_SDK_PATH` your specific LibreofficeSDK path. This is **NOT** your Libreoffice path
+Update `LIBREOFFICE_SDK_PATH` your specific LibreofficeSDK path. This is **NOT** your Libreoffice path.
+
+On Linux often times you will be able to omit this if your install is at the common paths of `/usr/lib64/libreoffice/program`, `/usr/lib/libreoffice/program`,
+or `/opt/libreoffice-{VERSION}/program`.
 
 # Building with docker
 
