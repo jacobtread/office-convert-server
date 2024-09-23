@@ -348,6 +348,9 @@ fn convert_document(
     // Read document context
     let bytes = std::fs::read(temp_out_str).context("failed to read temp out file")?;
 
+    // Delete the document after processing (To prevent conversions sticking around in temp)
+    _ = std::fs::remove_file(temp_out_str);
+
     Ok(Bytes::from(bytes))
 }
 
