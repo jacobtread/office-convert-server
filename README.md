@@ -1,5 +1,8 @@
 # Office convert server 
 
+![License](https://img.shields.io/github/license/jacobtread/office-convert-server?style=for-the-badge)
+![Build](https://img.shields.io/github/actions/workflow/status/jacobtread/office-convert-server/build.yml?style=for-the-badge)
+
 Simple server for converting office file formats into PDF files built on top of LibreOffice using https://github.com/jacobtread/libreofficekit
 
 This repository contains two separate crates, the first being `office-convert-server` which is the binary crate for the server itself. The second is `office-convert-client` in the client directory which is a library crate providing a client for interacting with the server as well as providing a load balancing implementation.
