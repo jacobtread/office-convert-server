@@ -1,6 +1,6 @@
 # Office convert server 
 
-Simple server for converting office file formats into PDF files built on top of LibreOffice
+Simple server for converting office file formats into PDF files built on top of LibreOffice using https://github.com/jacobtread/libreofficekit
 
 ## Requirements
 
