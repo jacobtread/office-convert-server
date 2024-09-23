@@ -62,12 +62,6 @@ Fedora:
 sudo dnf install libreoffice
 ```
 
-Ensure you set the following environment variable:
-
-```
-export LO_INCLUDE_PATH=/usr/include/LibreOfficeKit
-```
-
 ## Env variables
  
 The server requires the following environment variables. 
