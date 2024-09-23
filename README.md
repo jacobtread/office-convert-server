@@ -179,3 +179,45 @@ Will respond with the file converted to PDF format as bytes
 
 Takes in no arguments, will always respond with a 200 OK status. Office will be told to collect garbage after any other
 waiting requests are processed
+
+## Rust client library (office-convert-client)
+
+### Usage without load balancer
+
+Below is an example using the converter without the load balancer:
+
+```rust
+use office_convert_client::{OfficeConvertClient, ConvertOffice};
+
+// Create a client
+let convert_client = OfficeConvertClient::new("http://localhost:3000").unwrap();
+
+let bytes = vec![/* Bytes to convert */]
+
+// Convert the bytes
+let converted = convert_client.convert(bytes).await.unwrap();
+```
+
+> [!NOTE]
+>
+> I recommend using the load balancer even if you've only got one client, as it will provide
+> tolerance if the server fails / is unavailable 
+
+Clients on their own provide functions for all the endpoints mentioned above
+
+### Usage with load balancer
+
+```rust
+use office_convert_client::{OfficeConvertClient, ConvertOffice, OfficeConvertLoadBalancer};
+
+// Create a client
+let convert_client = OfficeConvertClient::new("http://localhost:3000").unwrap();
+
+// Create a convert load balancer
+let convert_load_balancer = OfficeConvertLoadBalancer::new(vec![convert_client]);
+
+let bytes = vec![/* Bytes to convert */]
+
+// Convert the bytes
+let converted = convert_load_balancer.convert(bytes).await.unwrap();
+```
