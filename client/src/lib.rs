@@ -60,9 +60,27 @@ pub enum RequestError {
     },
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct StatusResponse {
     pub is_busy: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SupportedFormat {
+    /// Name of the file format
+    pub name: String,
+    /// Mime type of the format
+    pub mime: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VersionResponse {
+    /// Major version of LibreOffice
+    pub major: u32,
+    /// Minor version of LibreOffice
+    pub minor: u32,
+    /// Libreoffice "Build ID"
+    pub build_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -171,6 +189,76 @@ impl OfficeConvertClient {
 
         // Extract the response message
         let response: StatusResponse = response
+            .json()
+            .await
+            .map_err(RequestError::InvalidResponse)?;
+
+        Ok(response)
+    }
+
+    /// Obtains the LibreOffice version that the server is using
+    pub async fn get_office_version(&self) -> Result<VersionResponse, RequestError> {
+        let route = format!("{}/office-version", self.host);
+        let response = self
+            .http
+            .get(route)
+            .send()
+            .await
+            .map_err(RequestError::RequestFailed)?;
+
+        let status = response.status();
+
+        // Handle error responses
+        if status.is_client_error() || status.is_server_error() {
+            let body: ErrorResponse = response
+                .json()
+                .await
+                .map_err(RequestError::InvalidResponse)?;
+
+            return Err(RequestError::ErrorResponse {
+                reason: body.reason,
+                backtrace: body.backtrace,
+            });
+        }
+
+        // Extract the response message
+        let response: VersionResponse = response
+            .json()
+            .await
+            .map_err(RequestError::InvalidResponse)?;
+
+        Ok(response)
+    }
+
+    /// Obtains the list of supported file formats from the server, will give back
+    /// an error if the version of LibreOffice does not support querying the
+    /// available file types
+    pub async fn get_supported_formats(&self) -> Result<Vec<SupportedFormat>, RequestError> {
+        let route = format!("{}/supported-formats", self.host);
+        let response = self
+            .http
+            .get(route)
+            .send()
+            .await
+            .map_err(RequestError::RequestFailed)?;
+
+        let status = response.status();
+
+        // Handle error responses
+        if status.is_client_error() || status.is_server_error() {
+            let body: ErrorResponse = response
+                .json()
+                .await
+                .map_err(RequestError::InvalidResponse)?;
+
+            return Err(RequestError::ErrorResponse {
+                reason: body.reason,
+                backtrace: body.backtrace,
+            });
+        }
+
+        // Extract the response message
+        let response: Vec<SupportedFormat> = response
             .json()
             .await
             .map_err(RequestError::InvalidResponse)?;
