@@ -113,3 +113,69 @@ Once you have the binary on your host, you can remove the temporary container:
 ```
 docker rm temp_container
 ```
+
+# Available Endpoints
+
+Below are the available endpoints, these are all accessible through the provided `office-convert-client` Rust client library.
+
+## GET /status (Server status)
+
+Obtains the current status of the server, used to check if the server is currently busy processing a document. 
+
+### Example Response
+
+```json
+{
+	"is_busy": false
+}
+```
+
+## GET /office-version (LibreOffice version details)
+
+Reports version information for the underlying LibreOffice instance 
+
+### Example Response
+
+```json
+{
+	"major": 24,
+	"minor": 2,
+	"build_id": "420(Build:2)"
+}
+```
+
+> [!NOTE]
+> 
+> Will return 404 error if the LibreOffice version is too old to support this functionality
+
+## GET /supported-formats (Formats supported by the server)
+
+Reports the file mime types supported by the LibreOffice install
+
+### Example Response
+
+```json
+[
+	{
+		"name": "writer_MS_Word_95",
+		"mime": "application/msword"
+	},
+    // ...remaining formats truncated for example
+]
+```
+
+> [!NOTE]
+> 
+> Will return 404 error if the LibreOffice version is too old to support this functionality
+
+## POST /convert (Convert a file)
+
+Upload a file for conversion, this takes a multipart form data POST request containing 
+a "file" field which is the file to convert.
+
+Will respond with the file converted to PDF format as bytes
+
+## POST /collect-garbage (Tell LibreOffice to clean up memory)
+
+Takes in no arguments, will always respond with a 200 OK status. Office will be told to collect garbage after any other
+waiting requests are processed
