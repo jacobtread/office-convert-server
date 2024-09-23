@@ -10,11 +10,14 @@ use axum_typed_multipart::{FieldData, TryFromMultipart, TypedMultipart};
 use bytes::Bytes;
 use clap::Parser;
 use error::DynHttpError;
-use libreofficekit::{CallbackType, DocUrl, Office, OfficeError, OfficeOptionalFeatures};
+use libreofficekit::{
+    CallbackType, DocUrl, FilterTypes, Office, OfficeError, OfficeOptionalFeatures,
+    OfficeVersionInfo,
+};
 use parking_lot::Mutex;
 use rand::{distributions::Alphanumeric, Rng};
 use serde::Serialize;
-use std::{env::temp_dir, ffi::CStr, path::PathBuf, rc::Rc};
+use std::{env::temp_dir, ffi::CStr, path::PathBuf, rc::Rc, sync::Arc};
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, error};
 use tracing_subscriber::EnvFilter;
@@ -99,16 +102,19 @@ async fn main() -> anyhow::Result<()> {
         std::env::var("SERVER_ADDRESS").context("missing SERVER_ADDRESS")?
     };
 
-    // Create office access
-    let office_handle = create_office_runner(office_path).await?;
+    // Create office access and get office details
+    let (office_details, office_handle) = create_office_runner(office_path).await?;
 
     // Create the router
     let app = Router::new()
         .route("/status", get(status))
+        .route("/office-version", get(office_version))
+        .route("/supported-formats", get(supported_formats))
         .route("/convert", post(convert))
         .route("/collect-garbage", post(collect_garbage))
         .layer(DefaultBodyLimit::max(1024 * 1024 * 1024))
-        .layer(Extension(office_handle));
+        .layer(Extension(office_handle))
+        .layer(Extension(Arc::new(office_details)));
 
     // Create a TCP listener
     let listener = tokio::net::TcpListener::bind(&server_address)
@@ -149,7 +155,7 @@ pub struct OfficeHandle(mpsc::Sender<OfficeMsg>);
 
 /// Creates a new office runner on its own thread providing
 /// a handle to access it via messages
-async fn create_office_runner(path: PathBuf) -> anyhow::Result<OfficeHandle> {
+async fn create_office_runner(path: PathBuf) -> anyhow::Result<(OfficeDetails, OfficeHandle)> {
     let (tx, rx) = mpsc::channel(1);
 
     let (startup_tx, startup_rx) = oneshot::channel();
@@ -168,9 +174,10 @@ async fn create_office_runner(path: PathBuf) -> anyhow::Result<OfficeHandle> {
     });
 
     // Wait for a successful startup
-    startup_rx.await.context("startup channel unavailable")??;
+    let office_details = startup_rx.await.context("startup channel unavailable")??;
+    let office_handle = OfficeHandle(tx);
 
-    Ok(OfficeHandle(tx))
+    Ok((office_details, office_handle))
 }
 
 #[derive(Debug, Default)]
@@ -178,11 +185,17 @@ struct RunnerState {
     password_requested: bool,
 }
 
+#[derive(Debug)]
+struct OfficeDetails {
+    filter_types: Option<FilterTypes>,
+    version: Option<OfficeVersionInfo>,
+}
+
 /// Main event loop for an office runner
 fn office_runner(
     path: PathBuf,
     mut rx: mpsc::Receiver<OfficeMsg>,
-    startup_tx: &mut Option<oneshot::Sender<anyhow::Result<()>>>,
+    startup_tx: &mut Option<oneshot::Sender<anyhow::Result<OfficeDetails>>>,
 ) -> anyhow::Result<()> {
     // Create office instance
     let office = Office::new(&path).context("failed to create office instance")?;
@@ -219,6 +232,10 @@ fn office_runner(
         .set_optional_features(OfficeOptionalFeatures::DOCUMENT_PASSWORD)
         .context("failed to set optional features")?;
 
+    // Load supported filters and office version details
+    let filter_types = office.get_filter_types().ok();
+    let version = office.get_version_info().ok();
+
     office
         .register_callback({
             let runner_state = runner_state.clone();
@@ -251,7 +268,10 @@ fn office_runner(
 
     // Report successful startup
     if let Some(startup_tx) = startup_tx.take() {
-        _ = startup_tx.send(Ok(()));
+        _ = startup_tx.send(Ok(OfficeDetails {
+            filter_types,
+            version,
+        }));
     }
 
     // Get next message
@@ -409,6 +429,60 @@ struct StatusResponse {
 async fn status(Extension(office): Extension<OfficeHandle>) -> Json<StatusResponse> {
     let is_locked = office.0.try_send(OfficeMsg::BusyCheck).is_err();
     Json(StatusResponse { is_busy: is_locked })
+}
+
+#[derive(Serialize)]
+struct VersionResponse {
+    /// Major version of LibreOffice
+    major: u32,
+    /// Minor version of LibreOffice
+    minor: u32,
+    /// Libreoffice "Build ID"
+    build_id: String,
+}
+
+/// GET /office-version
+///
+/// Checks if the converter is currently busy
+async fn office_version(
+    Extension(details): Extension<Arc<OfficeDetails>>,
+) -> Result<Json<VersionResponse>, StatusCode> {
+    let version = details.version.as_ref().ok_or(StatusCode::NOT_FOUND)?;
+    let product_version = &version.product_version;
+
+    Ok(Json(VersionResponse {
+        build_id: version.build_id.clone(),
+        major: product_version.major,
+        minor: product_version.minor,
+    }))
+}
+
+#[derive(Serialize)]
+struct SupportedFormat {
+    /// Name of the file format
+    name: String,
+    /// Mime type of the format
+    mime: String,
+}
+
+/// GET /supported-formats
+///
+/// Provides an array of supported file formats
+async fn supported_formats(
+    Extension(details): Extension<Arc<OfficeDetails>>,
+) -> Result<Json<Vec<SupportedFormat>>, StatusCode> {
+    let types = details.filter_types.as_ref().ok_or(StatusCode::NOT_FOUND)?;
+
+    let formats: Vec<SupportedFormat> = types
+        .values
+        .iter()
+        .map(|(key, value)| SupportedFormat {
+            name: key.to_string(),
+            mime: value.media_type.to_string(),
+        })
+        .collect();
+
+    Ok(Json(formats))
 }
 
 /// POST /collect-garbage
