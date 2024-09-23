@@ -12,6 +12,22 @@ This repository contains two separate crates, the first being `office-convert-se
 >
 > Alternatively use the older version listed above in order to avoid segfaults. This is a bug in LibreOffice itself and not in this server / backing library
 
+### Precompiled binaries
+
+Linux binaries are compiled against the version of glibc used by the Debian Bookworm Rust Docker image. If you version of glibc is different
+you will likely be unable to run the binary. For this case you will need to build the binary yourself.
+
+Below are links to pre-compiled binaries:
+
+| Platform | Download                                                                                                           |
+| -------- | ------------------------------------------------------------------------------------------------------------------ |
+| Linux    | [Download](https://github.com/jacobtread/office-convert-server/releases/latest/download/office-convert-server)     |
+| Windows  | [Download](https://github.com/jacobtread/office-convert-server/releases/latest/download/office-convert-server.exe) |
+
+
+You can find individual releases on the [Releases](https://github.com/jacobtread/office-convert-server/releases) page
+
+
 ### Server CLI arguments
 
 You can provide arguments to the server to control its behavior:

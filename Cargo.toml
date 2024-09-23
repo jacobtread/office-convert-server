@@ -45,3 +45,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2"
 parking_lot = "0.12"
 clap = { version = "4.5", features = ["derive"] }
+
+[workspace.metadata.cross.target.x86_64-unknown-linux-gnu]
+image = "rust:1.80.0-slim-bookworm"
